@@ -1,0 +1,23 @@
+# === Core Dependencies ===
+# PyQt6 is used for the graphical user interface.
+PyQt6>=6.6
+
+# PyYAML is used to load configuration and metadata from stitcher_config.yaml.
+PyYAML>=6.0
+
+# === Optional Enhancements ===
+# pypandoc can be used to call Pandoc directly from Python (future CLI support).
+pypandoc>=1.13
+
+# colorama provides cross-platform colored console output (for logs/progress).
+colorama>=0.4.6
+
+# === Developer Tools (Optional but Recommended) ===
+# pytest is used for running automated unit tests.
+pytest>=8.0
+
+# black provides consistent code formatting.
+black>=24.0
+
+# flake8 for linting and static code checks.
+flake8>=7.0

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+*.db
+*.sqlite3
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+*.env
+
+# Build outputs
+*.pdf
+*.docx
+*.html
+The_FTC_Software_Rule_Compiled.md
+The_FTC_Software_Rule_Compiled.pdf
+
+# PyInstaller / build tools
+build/
+dist/
+*.spec
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.bak
+Thumbs.db
+.DS_Store
