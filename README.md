@@ -88,8 +88,8 @@ python gui.py
 ### 4) Build
 - Click **Build Selected Sections**.  
 - Output files appear in the project directory:
-  - **Markdown:** `The_FTC_Software_Rule_Compiled.md` (by default; can be changed per project)
-  - **PDF:** `The_FTC_Software_Rule_Compiled.pdf` (if Pandoc + engine available)
+  - **Markdown:** `my_doc.md` (by default; can be changed per project)
+  - **PDF:** `my_doc.pdf` (if Pandoc + engine available)
 
 ### 5) Save settings at any time
 - Click **Save Project Settings** (or press **Ctrl+S**).  
@@ -122,8 +122,8 @@ selections:
   # … one entry per TOC line (slugs keep matches stable if punctuation changes)
 
 metadata:
-  title: "The FTC Software Rule"
-  subtitle: "Truth, Autonomy, and Transparency in Digital Systems"
+  title: "My Doc"
+  subtitle: "Stitched together from multiple MD Files"
   author: "Cypher"
   date: "October 2025"
   license: "CC BY-SA 4.0"
@@ -133,7 +133,7 @@ metadata:
   toc-depth: 3
 
 output:
-  filename: "The_FTC_Software_Rule_Compiled.md"
+  filename: "my_doc.md"
   mode: "overwrite"            # overwrite | timestamped | append (append supported now; others easy to add)
   pdf_engine_preference: "auto"   # auto | xelatex | wkhtmltopdf
 ```
