@@ -60,7 +60,7 @@ class TOCStitcherCore:
                 self.project_settings = {}
 
         # Output defaults (can be overridden by settings or arg)
-        default_name = "The_FTC_Software_Rule_Compiled.md"
+        default_name = "my_doc.md"
         name_from_cfg = (self.project_settings.get("output") or {}).get("filename")
         self.output_md = self.base_dir / (
             output_filename or name_from_cfg or default_name
