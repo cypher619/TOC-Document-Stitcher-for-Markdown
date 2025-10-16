@@ -1,4 +1,4 @@
-# gui.py
+# gui.py - Updated with metadata editor
 from pathlib import Path
 import re
 import yaml
@@ -7,7 +7,8 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel
+    QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
+    QDialog, QFormLayout, QLineEdit, QCheckBox, QTabWidget, QMessageBox
 )
 from PyQt6.QtCore import QUrl
 
@@ -41,11 +42,9 @@ def settings_from_toc(entries: list[TOCEntry]) -> dict:
             "license": "",
             "geometry": "margin=1in",
             "fontsize": "12pt",
-            "toc": True,
-            "toc-depth": 3,
         },
         "output": {
-            "filename": "The_FTC_Software_Rule_Compiled.md",
+            "filename": "compiled_document.md",
             "mode": "overwrite",
             "pdf_engine_preference": "auto",
         },
@@ -83,6 +82,271 @@ def reconcile_settings_with_toc(settings: dict, entries: list[TOCEntry]) -> dict
         "toc": settings.get("toc", {"place": "by_toc"}),
     }
     return out
+
+
+# ----------------------- Metadata Editor Dialog -----------------------
+
+class MetadataEditorDialog(QDialog):
+    """Dialog for editing YAML metadata settings"""
+    
+    def __init__(self, base_dir: Path, parent=None):
+        super().__init__(parent)
+        self.base_dir = Path(base_dir)
+        self.settings_file = self.base_dir / SETTINGS_FILE
+        
+        self.setWindowTitle("Edit Metadata Settings")
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(500)
+        
+        self.init_ui()
+        self.load_settings()
+    
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Create tab widget
+        self.tabs = QTabWidget()
+        
+        # Document metadata tab
+        doc_tab = QWidget()
+        doc_layout = QFormLayout(doc_tab)
+        
+        self.title_edit = QLineEdit()
+        self.subtitle_edit = QLineEdit()
+        self.author_edit = QLineEdit()
+        self.date_edit = QLineEdit()
+        self.license_edit = QLineEdit()
+        
+        doc_layout.addRow("Title:", self.title_edit)
+        doc_layout.addRow("Subtitle:", self.subtitle_edit)
+        doc_layout.addRow("Author:", self.author_edit)
+        doc_layout.addRow("Date:", self.date_edit)
+        doc_layout.addRow("License:", self.license_edit)
+        
+        self.tabs.addTab(doc_tab, "Document Info")
+        
+        # PDF settings tab
+        pdf_tab = QWidget()
+        pdf_layout = QFormLayout(pdf_tab)
+        
+        self.geometry_edit = QLineEdit()
+        self.geometry_edit.setPlaceholderText("e.g., margin=1in")
+        
+        self.fontsize_edit = QLineEdit()
+        self.fontsize_edit.setPlaceholderText("e.g., 12pt")
+        
+        self.toc_checkbox = QCheckBox("Generate Table of Contents (Pandoc auto-TOC)")
+        self.toc_checkbox.setToolTip("Enable this if you want Pandoc to auto-generate a TOC")
+        
+        self.toc_depth_edit = QLineEdit()
+        self.toc_depth_edit.setPlaceholderText("e.g., 3")
+        
+        pdf_layout.addRow("Page Geometry:", self.geometry_edit)
+        pdf_layout.addRow("Font Size:", self.fontsize_edit)
+        pdf_layout.addRow("", self.toc_checkbox)
+        pdf_layout.addRow("TOC Depth:", self.toc_depth_edit)
+        
+        # Add warning label
+        warning_label = QLabel("⚠️ Disable auto-TOC if you already have a manual TOC in your document")
+        warning_label.setStyleSheet("QLabel { color: #d97706; font-style: italic; }")
+        warning_label.setWordWrap(True)
+        pdf_layout.addRow("", warning_label)
+        
+        self.tabs.addTab(pdf_tab, "PDF Settings")
+        
+        # Output settings tab
+        output_tab = QWidget()
+        output_layout = QFormLayout(output_tab)
+        
+        self.output_filename_edit = QLineEdit()
+        self.output_filename_edit.setPlaceholderText("e.g., my_document.md")
+        
+        self.pdf_engine_edit = QLineEdit()
+        self.pdf_engine_edit.setPlaceholderText("auto, xelatex, or wkhtmltopdf")
+        
+        output_layout.addRow("Output Filename:", self.output_filename_edit)
+        output_layout.addRow("PDF Engine:", self.pdf_engine_edit)
+        
+        self.tabs.addTab(output_tab, "Output")
+        
+        # Raw YAML editor tab
+        yaml_tab = QWidget()
+        yaml_layout = QVBoxLayout(yaml_tab)
+        
+        yaml_label = QLabel("Advanced: Edit raw YAML (use with caution)")
+        yaml_label.setStyleSheet("QLabel { font-weight: bold; }")
+        yaml_layout.addWidget(yaml_label)
+        
+        self.yaml_editor = QTextEdit()
+        self.yaml_editor.setPlaceholderText("metadata:\n  title: \"My Document\"\n  author: \"Author Name\"")
+        yaml_layout.addWidget(self.yaml_editor)
+        
+        self.tabs.addTab(yaml_tab, "Raw YAML")
+        
+        layout.addWidget(self.tabs)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.save_button = QPushButton("Save Settings")
+        self.save_button.clicked.connect(self.save_settings)
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        
+        self.reset_button = QPushButton("Reset to Defaults")
+        self.reset_button.clicked.connect(self.reset_to_defaults)
+        
+        button_layout.addWidget(self.reset_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.save_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect tab changes to sync YAML
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+    
+    def load_settings(self):
+        """Load existing settings from YAML file"""
+        settings = load_settings(self.settings_file)
+        if not settings:
+            settings = settings_from_toc([])
+        
+        self.settings = settings
+        
+        # Populate form fields
+        metadata = settings.get("metadata", {})
+        self.title_edit.setText(metadata.get("title", ""))
+        self.subtitle_edit.setText(metadata.get("subtitle", ""))
+        self.author_edit.setText(metadata.get("author", ""))
+        self.date_edit.setText(metadata.get("date", ""))
+        self.license_edit.setText(metadata.get("license", ""))
+        self.geometry_edit.setText(metadata.get("geometry", "margin=1in"))
+        self.fontsize_edit.setText(metadata.get("fontsize", "12pt"))
+        self.toc_checkbox.setChecked(metadata.get("toc", False))
+        self.toc_depth_edit.setText(str(metadata.get("toc-depth", 3)))
+        
+        output = settings.get("output", {})
+        self.output_filename_edit.setText(output.get("filename", "compiled_document.md"))
+        self.pdf_engine_edit.setText(output.get("pdf_engine_preference", "auto"))
+        
+        # Populate YAML editor
+        self.yaml_editor.setPlainText(yaml.dump(settings, default_flow_style=False, sort_keys=False))
+    
+    def on_tab_changed(self, index):
+        """Sync form fields to YAML editor when switching tabs"""
+        current_tab_name = self.tabs.tabText(index)
+        
+        # Always update internal settings from current form state first
+        self.update_settings_from_form()
+        
+        if current_tab_name == "Raw YAML":
+            # Switching TO YAML tab - update YAML editor with current form values
+            self.yaml_editor.setPlainText(yaml.dump(self.settings, default_flow_style=False, sort_keys=False))
+        else:
+            # Switching FROM YAML tab - try to parse and update form fields
+            try:
+                yaml_text = self.yaml_editor.toPlainText()
+                if yaml_text.strip():
+                    parsed = yaml.safe_load(yaml_text)
+                    if parsed:
+                        self.settings = parsed
+                        # Update form fields from parsed YAML
+                        metadata = self.settings.get("metadata", {})
+                        self.title_edit.setText(metadata.get("title", ""))
+                        self.subtitle_edit.setText(metadata.get("subtitle", ""))
+                        self.author_edit.setText(metadata.get("author", ""))
+                        self.date_edit.setText(metadata.get("date", ""))
+                        self.license_edit.setText(metadata.get("license", ""))
+                        self.geometry_edit.setText(metadata.get("geometry", "margin=1in"))
+                        self.fontsize_edit.setText(metadata.get("fontsize", "12pt"))
+                        self.toc_checkbox.setChecked(metadata.get("toc", False))
+                        self.toc_depth_edit.setText(str(metadata.get("toc-depth", 3)))
+                        
+                        output = self.settings.get("output", {})
+                        self.output_filename_edit.setText(output.get("filename", "compiled_document.md"))
+                        self.pdf_engine_edit.setText(output.get("pdf_engine_preference", "auto"))
+            except yaml.YAMLError:
+                pass  # Keep current form values if YAML is invalid
+    
+    def update_settings_from_form(self):
+        """Update settings dictionary from form fields"""
+        if "metadata" not in self.settings:
+            self.settings["metadata"] = {}
+        if "output" not in self.settings:
+            self.settings["output"] = {}
+        
+        metadata = self.settings["metadata"]
+        metadata["title"] = self.title_edit.text()
+        metadata["subtitle"] = self.subtitle_edit.text()
+        metadata["author"] = self.author_edit.text()
+        metadata["date"] = self.date_edit.text()
+        metadata["license"] = self.license_edit.text()
+        metadata["geometry"] = self.geometry_edit.text()
+        metadata["fontsize"] = self.fontsize_edit.text()
+        
+        # Only include toc settings if checkbox is checked
+        if self.toc_checkbox.isChecked():
+            metadata["toc"] = True
+            try:
+                metadata["toc-depth"] = int(self.toc_depth_edit.text())
+            except ValueError:
+                metadata["toc-depth"] = 3
+        else:
+            # Remove toc settings if unchecked
+            metadata.pop("toc", None)
+            metadata.pop("toc-depth", None)
+        
+        output = self.settings["output"]
+        output["filename"] = self.output_filename_edit.text()
+        output["pdf_engine_preference"] = self.pdf_engine_edit.text()
+    
+    def save_settings(self):
+        """Save settings to YAML file"""
+        try:
+            # If on YAML tab, try to parse it first
+            if self.tabs.tabText(self.tabs.currentIndex()) == "Raw YAML":
+                yaml_text = self.yaml_editor.toPlainText()
+                try:
+                    self.settings = yaml.safe_load(yaml_text) or {}
+                except yaml.YAMLError as e:
+                    QMessageBox.warning(self, "YAML Error", f"Invalid YAML syntax:\n{e}")
+                    return
+            else:
+                # Update from form fields
+                self.update_settings_from_form()
+            
+            # Write to file
+            save_settings(self.settings_file, self.settings)
+            
+            QMessageBox.information(self, "Success", f"Settings saved to:\n{self.settings_file}")
+            self.accept()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Error saving settings:\n{e}")
+    
+    def reset_to_defaults(self):
+        """Reset all fields to default values"""
+        reply = QMessageBox.question(
+            self,
+            "Reset to Defaults",
+            "Are you sure you want to reset all settings to defaults?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.title_edit.setText("Compiled Document")
+            self.subtitle_edit.clear()
+            self.author_edit.clear()
+            self.date_edit.clear()
+            self.license_edit.clear()
+            self.geometry_edit.setText("margin=1in")
+            self.fontsize_edit.setText("12pt")
+            self.toc_checkbox.setChecked(False)
+            self.toc_depth_edit.setText("3")
+            self.output_filename_edit.setText("compiled_document.md")
+            self.pdf_engine_edit.setText("auto")
 
 
 # ------------------------- worker ---------------------------
@@ -129,12 +393,20 @@ class StitcherGUI(QMainWindow):
         row = QHBoxLayout()
         self.btn_pick = QPushButton("Pick Working Directory")
         self.lbl_dir = QLabel("(none)")
-        self.btn_open_folder = QPushButton("Open Output Folder")  # NEW
+        self.btn_open_folder = QPushButton("Open Output Folder")
         self.btn_open_folder.setEnabled(False)
         row.addWidget(self.btn_pick)
         row.addWidget(self.lbl_dir, 1)
-        row.addWidget(self.btn_open_folder)  # NEW
+        row.addWidget(self.btn_open_folder)
         layout.addLayout(row)
+
+        # Metadata settings button row
+        meta_row = QHBoxLayout()
+        self.btn_metadata = QPushButton("⚙️ Metadata Settings")
+        self.btn_metadata.setEnabled(False)
+        meta_row.addStretch()
+        meta_row.addWidget(self.btn_metadata)
+        layout.addLayout(meta_row)
 
         # TOC tree
         self.toc_tree = QTreeWidget()
@@ -163,6 +435,7 @@ class StitcherGUI(QMainWindow):
         self.btn_build.clicked.connect(self.start_build)
         self.btn_save.clicked.connect(self.save_project_settings)
         self.btn_open_folder.clicked.connect(self.open_output_folder)
+        self.btn_metadata.clicked.connect(self.open_metadata_editor)
 
         # hotkey: Ctrl+S to save settings
         QShortcut(QKeySequence("Ctrl+S"), self, activated=self.save_project_settings)
@@ -270,7 +543,7 @@ class StitcherGUI(QMainWindow):
                 settings = reconcile_settings_with_toc(existing, entries)
                 if settings != existing:
                     save_settings(cfg_path, settings)
-                    self.output.append(f"🔁 Updated {cfg_path.name} to match current TOC.")
+                    self.output.append(f"🔄 Updated {cfg_path.name} to match current TOC.")
 
             self.apply_selections_to_tree(settings)
             self.settings = settings
@@ -278,8 +551,21 @@ class StitcherGUI(QMainWindow):
             self.btn_build.setEnabled(True)
             self.btn_save.setEnabled(True)
             self.btn_open_folder.setEnabled(True)
+            self.btn_metadata.setEnabled(True)
         except Exception as e:
             self.output.append(f"❌ Failed to load TOC/settings: {e}")
+
+    def open_metadata_editor(self):
+        """Open metadata settings dialog"""
+        if not self.base_dir:
+            return
+        
+        dialog = MetadataEditorDialog(self.base_dir, self)
+        if dialog.exec():
+            self.output.append("✅ Metadata settings saved")
+            # Reload settings to pick up changes
+            cfg_path = self.base_dir / SETTINGS_FILE
+            self.settings = load_settings(cfg_path) or settings_from_toc([])
 
     def start_build(self):
         if not self.base_dir:

@@ -82,6 +82,7 @@ class TOCStitcherCore:
         Return TOC entries in exact document order.
         Headings (#, ##, ###, ...) retain their level.
         Bulleted list items ('- ') are treated as H3 by default.
+        H1 headings are skipped.
         """
         lines = self.toc_file.read_text(encoding="utf-8").splitlines()
         out: List[TOCEntry] = []
@@ -91,6 +92,9 @@ class TOCStitcherCore:
                 continue
             if line.startswith("#"):
                 level = len(line.split()[0])
+                # Skip H1 headings
+                if level == 1:
+                    continue
                 title = re.sub(r"^#+\s*", "", line).strip()
                 if title:
                     out.append(TOCEntry(level=level, title=title))
@@ -310,8 +314,6 @@ class TOCStitcherCore:
             "license": "",
             "geometry": "margin=1in",
             "fontsize": "12pt",
-            "toc": True,
-            "toc-depth": 3,
         }
         meta.update(self.project_settings.get("metadata", {}) or {})
 
@@ -330,6 +332,39 @@ class TOCStitcherCore:
     # ============================================================
     # -------------------  BUILD (TREE-DRIVEN)  ------------------
     # ============================================================
+
+    def _fix_horizontal_rules(self, content):
+        """Replace --- with *** except in YAML frontmatter"""
+        lines = content.split('\n')
+        result = []
+        in_frontmatter = False
+        frontmatter_closed = False
+        dash_count = 0
+        
+        for i, line in enumerate(lines):
+            # Check if this line is exactly "---" (horizontal rule or YAML delimiter)
+            if line.strip() == '---':
+                # First --- at the start of document opens frontmatter
+                if i == 0 or (i < 3 and all(l.strip() == '' for l in lines[:i])):
+                    in_frontmatter = True
+                    dash_count = 1
+                    result.append(line)
+                # Second --- closes frontmatter
+                elif in_frontmatter and dash_count == 1:
+                    in_frontmatter = False
+                    frontmatter_closed = True
+                    dash_count = 2
+                    result.append(line)
+                # Any other --- after frontmatter is a horizontal rule - replace it
+                elif frontmatter_closed:
+                    result.append('***')
+                else:
+                    # Before frontmatter is established, keep as is
+                    result.append(line)
+            else:
+                result.append(line)
+        
+        return '\n'.join(result)
 
     def build_markdown(self, selected_entries: List[TOCEntry], log_fn=None) -> Tuple[Path, int]:
         """
@@ -396,6 +431,9 @@ class TOCStitcherCore:
             process_node(root, is_first_top_level=(i == 0))
 
         compiled = self._metadata_header() + "\n" + "\n".join(sections)
+        
+        # Fix horizontal rules (replace --- with *** except in YAML frontmatter)
+        compiled = self._fix_horizontal_rules(compiled)
 
         # Write (overwrite by default; modes can be extended if desired)
         if self._output_mode == "append":
@@ -411,7 +449,6 @@ class TOCStitcherCore:
             raise IOError(f"Markdown write failed or empty: {final_path}")
 
         return final_path.resolve(), chars
-
     # ============================================================
     # -----------------------  PDF EXPORT  -----------------------
     # ============================================================
@@ -441,9 +478,8 @@ class TOCStitcherCore:
         return None
 
     def _pandoc_common_args(self) -> List[str]:
-        return [
+        args = [
             str(self.output_md),
-            "--toc", "--toc-depth=3",
             "--metadata", "link-citations=true",
             "--resource-path", str(self.base_dir),
             "-V", "geometry:margin=1in",
@@ -452,6 +488,13 @@ class TOCStitcherCore:
             "-V", "linkcolor=blue",
             "-V", "urlcolor=blue",
         ]
+        
+        # Only add --toc if explicitly enabled in metadata
+        meta = self.project_settings.get("metadata", {}) or {}
+        if meta.get("toc") is True:
+            args.extend(["--toc", f"--toc-depth={meta.get('toc-depth', 3)}"])
+        
+        return args
 
     def export_pdf(self, log_fn=None) -> Path:
         def _log(msg: str):
